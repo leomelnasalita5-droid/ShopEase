@@ -5,6 +5,7 @@ const dotenv = require("dotenv");
 const cookieParser = require("cookie-parser");
 const path = require("path");
 
+// Load environment variables
 dotenv.config();
 
 const app = express();
@@ -14,10 +15,19 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
+// API Routes
+const authRoutes = require("./routes/auth");
+const productRoutes = require("./routes/products");
+const orderRoutes = require("./routes/orders");
+
+app.use("/api/auth", authRoutes);
+app.use("/api/products", productRoutes);
+app.use("/api/orders", orderRoutes);
+
 // Frontend files
 app.use(express.static(path.join(__dirname, "public")));
 
-// Test route
+// Server status
 app.get("/api/status", (req, res) => {
     res.json({
         message: "ShopEase server is running!",
@@ -40,4 +50,5 @@ mongoose.connect(process.env.MONGODB_URI)
     })
     .catch((error) => {
         console.error("MongoDB connection failed:", error.message);
+        process.exit(1);
     });
