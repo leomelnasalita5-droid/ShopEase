@@ -70,7 +70,6 @@ function loadUserCart() {
             cart = [];
         }
     } else {
-        // Migrate an older cart to this customer's account.
         try {
             cart = JSON.parse(
                 localStorage.getItem(CART_STORAGE_KEY)
@@ -123,6 +122,19 @@ function showCheckoutMessage(message) {
 
     if (element) {
         element.textContent = message;
+    }
+}
+
+// Read server responses safely
+async function readResponse(response) {
+    const responseText = await response.text();
+
+    try {
+        return JSON.parse(responseText);
+    } catch {
+        throw new Error(
+            "The server returned an invalid response. Please try again."
+        );
     }
 }
 
@@ -311,7 +323,7 @@ async function loadProducts() {
             throw new Error("Unable to load products.");
         }
 
-        const data = await response.json();
+        const data = await readResponse(response);
 
         products = Array.isArray(data)
             ? data
@@ -644,15 +656,11 @@ function updateCart() {
                         </p>
 
                         <div class="quantity-controls">
-                            <button onclick="changeQuantity(${index}, -1)">
-                                −
-                            </button>
+                            <button onclick="changeQuantity(${index}, -1)">−</button>
 
                             <strong>${item.quantity}</strong>
 
-                            <button onclick="changeQuantity(${index}, 1)">
-                                +
-                            </button>
+                            <button onclick="changeQuantity(${index}, 1)">+</button>
                         </div>
 
                         <button
@@ -751,7 +759,7 @@ document.getElementById("register-form")
                 body: JSON.stringify({ name, email, password })
             });
 
-            const data = await response.json();
+            const data = await readResponse(response);
 
             if (!response.ok) {
                 throw new Error(data.message || "Registration failed.");
@@ -804,10 +812,12 @@ document.getElementById("login-form")
                 body: JSON.stringify({ email, password })
             });
 
-            const data = await response.json();
+            const data = await readResponse(response);
 
             if (!response.ok) {
-                throw new Error(data.message || "Invalid email or password.");
+                throw new Error(
+                    data.message || "Incorrect email or password. Please try again."
+                );
             }
 
             currentUser = data.user;
@@ -819,15 +829,18 @@ document.getElementById("login-form")
             updateAccountView();
             updateCart();
 
-            showAccountMessage(
-                "Welcome to ShopEase!",
-                "success"
-            );
+            // Successful login goes straight to the homepage.
+            clearAccountMessage();
+            showPage("home");
 
             loadOrders();
 
         } catch (error) {
-            showAccountMessage(error.message, "error");
+            // Show the error underneath the login button.
+            showAccountMessage(
+                error.message || "Incorrect email or password. Please try again.",
+                "error"
+            );
         } finally {
             submitButton.disabled = false;
             submitButton.textContent = "Login";
@@ -854,7 +867,7 @@ async function restoreLoginSession() {
             return;
         }
 
-        const data = await response.json();
+        const data = await readResponse(response);
 
         currentUser = data.user;
 
@@ -976,7 +989,7 @@ document.getElementById("logout-button")
                 credentials: "include"
             });
 
-            const data = await response.json();
+            const data = await readResponse(response);
 
             if (!response.ok) {
                 throw new Error(data.message || "Logout failed.");
@@ -997,6 +1010,8 @@ document.getElementById("logout-button")
             updateCart();
 
             showLoginForm();
+
+            showPage("account");
 
             showAccountMessage(
                 "You have logged out successfully.",
@@ -1057,7 +1072,7 @@ document.getElementById("checkout-button")
                 })
             });
 
-            const data = await response.json();
+            const data = await readResponse(response);
 
             if (!response.ok) {
                 throw new Error(data.message || "Checkout failed.");
@@ -1103,7 +1118,7 @@ async function loadOrders() {
             credentials: "include"
         });
 
-        const data = await response.json();
+        const data = await readResponse(response);
 
         if (!response.ok) {
             throw new Error(data.message || "Unable to load orders.");
