@@ -22,6 +22,222 @@ const CATEGORY_STORAGE_KEY = "shopease_category";
 const SEARCH_STORAGE_KEY = "shopease_search";
 
 // ==========================================
+// SHOPEASE TOAST NOTIFICATIONS
+// ==========================================
+
+function initializeToastStyles() {
+    if (document.getElementById("shopease-toast-styles")) return;
+
+    const style = document.createElement("style");
+    style.id = "shopease-toast-styles";
+
+    style.textContent = `
+        #shopease-toast-container {
+            position: fixed;
+            top: 100px;
+            right: 20px;
+            z-index: 99999;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            width: min(360px, calc(100vw - 32px));
+            pointer-events: none;
+        }
+
+        .shopease-toast {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: #ffffff;
+            color: #202039;
+            border: 1px solid #eeeeee;
+            border-left: 5px solid #16a34a;
+            border-radius: 12px;
+            padding: 15px;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
+            pointer-events: auto;
+            animation: shopeaseToastIn 0.3s ease forwards;
+            overflow: hidden;
+        }
+
+        .shopease-toast.success {
+            border-left-color: #16a34a;
+        }
+
+        .shopease-toast.error {
+            border-left-color: #dc2626;
+        }
+
+        .shopease-toast.warning {
+            border-left-color: #f59e0b;
+        }
+
+        .shopease-toast.info {
+            border-left-color: #ff5722;
+        }
+
+        .shopease-toast-icon {
+            font-size: 23px;
+            flex-shrink: 0;
+        }
+
+        .shopease-toast-content {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .shopease-toast-title {
+            font-weight: 700;
+            font-size: 14px;
+            margin-bottom: 3px;
+        }
+
+        .shopease-toast-message {
+            font-size: 13px;
+            line-height: 1.4;
+            color: #77778b;
+            overflow-wrap: anywhere;
+        }
+
+        .shopease-toast-close {
+            border: none;
+            background: transparent;
+            color: #77778b;
+            font-size: 20px;
+            cursor: pointer;
+            padding: 3px 6px;
+            flex-shrink: 0;
+        }
+
+        .shopease-toast-close:hover {
+            color: #202039;
+        }
+
+        .shopease-toast.removing {
+            animation: shopeaseToastOut 0.25s ease forwards;
+        }
+
+        @keyframes shopeaseToastIn {
+            from {
+                opacity: 0;
+                transform: translateX(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        @keyframes shopeaseToastOut {
+            from {
+                opacity: 1;
+                transform: translateX(0);
+            }
+            to {
+                opacity: 0;
+                transform: translateX(30px);
+            }
+        }
+
+        @media (max-width: 480px) {
+            #shopease-toast-container {
+                top: 85px;
+                right: 12px;
+                width: calc(100vw - 24px);
+            }
+        }
+    `;
+
+    document.head.appendChild(style);
+
+    const container = document.createElement("div");
+    container.id = "shopease-toast-container";
+    container.setAttribute("aria-live", "polite");
+    container.setAttribute("aria-atomic", "false");
+
+    document.body.appendChild(container);
+}
+
+function showToast(message, type = "success") {
+    initializeToastStyles();
+
+    const container = document.getElementById(
+        "shopease-toast-container"
+    );
+
+    const settings = {
+        success: {
+            icon: "✓",
+            title: "Success"
+        },
+        error: {
+            icon: "✕",
+            title: "Something went wrong"
+        },
+        warning: {
+            icon: "⚠",
+            title: "Please note"
+        },
+        info: {
+            icon: "ℹ",
+            title: "ShopEase"
+        }
+    };
+
+    const selected = settings[type] || settings.info;
+
+    const toast = document.createElement("div");
+    toast.className = `shopease-toast ${type}`;
+
+    const icon = document.createElement("div");
+    icon.className = "shopease-toast-icon";
+    icon.textContent = selected.icon;
+
+    const content = document.createElement("div");
+    content.className = "shopease-toast-content";
+
+    const title = document.createElement("div");
+    title.className = "shopease-toast-title";
+    title.textContent = selected.title;
+
+    const messageElement = document.createElement("div");
+    messageElement.className = "shopease-toast-message";
+    messageElement.textContent = message;
+
+    const closeButton = document.createElement("button");
+    closeButton.className = "shopease-toast-close";
+    closeButton.type = "button";
+    closeButton.textContent = "×";
+    closeButton.setAttribute("aria-label", "Close notification");
+
+    content.appendChild(title);
+    content.appendChild(messageElement);
+
+    toast.appendChild(icon);
+    toast.appendChild(content);
+    toast.appendChild(closeButton);
+
+    container.appendChild(toast);
+
+    let timeout;
+
+    function removeToast() {
+        if (toast.classList.contains("removing")) return;
+
+        clearTimeout(timeout);
+        toast.classList.add("removing");
+
+        setTimeout(() => {
+            toast.remove();
+        }, 250);
+    }
+
+    closeButton.addEventListener("click", removeToast);
+
+    timeout = setTimeout(removeToast, 3200);
+}
+
+// ==========================================
 // HELPER FUNCTIONS
 // ==========================================
 
@@ -54,9 +270,20 @@ function getUserCartKey() {
         : CART_STORAGE_KEY;
 }
 
+function getCartQuantity() {
+    return cart.reduce((total, item) => {
+        return total + Math.max(0, Number(item.quantity) || 0);
+    }, 0);
+}
+
+// ==========================================
+// CART STORAGE
+// ==========================================
+
 function loadUserCart() {
     if (!currentUser) {
         cart = [];
+        updateCart();
         return;
     }
 
@@ -65,15 +292,18 @@ function loadUserCart() {
 
     if (savedCart) {
         try {
-            cart = JSON.parse(savedCart) || [];
+            const parsed = JSON.parse(savedCart);
+            cart = Array.isArray(parsed) ? parsed : [];
         } catch {
             cart = [];
         }
     } else {
         try {
-            cart = JSON.parse(
+            const parsed = JSON.parse(
                 localStorage.getItem(CART_STORAGE_KEY)
-            ) || [];
+            );
+
+            cart = Array.isArray(parsed) ? parsed : [];
         } catch {
             cart = [];
         }
@@ -87,6 +317,8 @@ function loadUserCart() {
     }
 
     localStorage.removeItem(CART_STORAGE_KEY);
+
+    updateCart();
 }
 
 function saveCart() {
@@ -99,6 +331,10 @@ function saveCart() {
 
     updateCart();
 }
+
+// ==========================================
+// ACCOUNT MESSAGES
+// ==========================================
 
 function showAccountMessage(message, type = "error") {
     const element = document.getElementById("account-message");
@@ -125,7 +361,10 @@ function showCheckoutMessage(message) {
     }
 }
 
-// Read server responses safely
+// ==========================================
+// READ SERVER RESPONSES SAFELY
+// ==========================================
+
 async function readResponse(response) {
     const responseText = await response.text();
 
@@ -574,7 +813,7 @@ function addToCart(productId) {
     const product = products.find(item => item._id === productId);
 
     if (!product) {
-        alert("Product not found.");
+        showToast("Product not found.", "error");
         return;
     }
 
@@ -583,11 +822,11 @@ function addToCart(productId) {
     );
 
     const newQuantity = existingItem
-        ? existingItem.quantity + 1
+        ? Number(existingItem.quantity) + 1
         : 1;
 
     if (newQuantity > Number(product.stock)) {
-        alert("Not enough stock available.");
+        showToast("Not enough stock available.", "warning");
         return;
     }
 
@@ -605,8 +844,15 @@ function addToCart(productId) {
 
     saveCart();
 
-    alert("Product added to your cart!");
+    showToast(
+        `${product.name} has been added to your cart!`,
+        "success"
+    );
 }
+
+// ==========================================
+// UPDATE CART DISPLAY AND LIVE COUNTER
+// ==========================================
 
 function updateCart() {
     const cartItems = document.getElementById("cart-items");
@@ -619,23 +865,42 @@ function updateCart() {
         cartCount.textContent = "0";
 
         document.getElementById("cart-subtotal").textContent = "0.00";
+
+        const shippingFee = document.getElementById("shipping-fee");
+        if (shippingFee) shippingFee.textContent = "0.00";
+
         document.getElementById("cart-total").textContent = "0.00";
 
         return;
     }
 
+    // Count every item quantity, not just different product types.
+    const count = getCartQuantity();
+
     let subtotal = 0;
-    let count = 0;
+
+    cartCount.textContent = count;
+
+    // Update the cart icon's accessible label if available.
+    const cartLink = cartCount.closest("button, a, .nav-item");
+
+    if (cartLink) {
+        cartLink.setAttribute(
+            "aria-label",
+            `Shopping cart with ${count} items`
+        );
+    }
 
     if (cart.length === 0) {
         cartItems.innerHTML =
             "<p>Your shopping cart is empty.</p>";
     } else {
         cartItems.innerHTML = cart.map((item, index) => {
-            const itemSubtotal = item.price * item.quantity;
+            const quantity = Number(item.quantity) || 0;
+            const price = Number(item.price) || 0;
+            const itemSubtotal = price * quantity;
 
             subtotal += itemSubtotal;
-            count += item.quantity;
 
             return `
                 <div class="cart-item">
@@ -649,7 +914,7 @@ function updateCart() {
                     <div class="cart-item-info">
                         <h3>${escapeHTML(item.name)}</h3>
 
-                        <p>Price: ₱${money(item.price)}</p>
+                        <p>Price: ₱${money(price)}</p>
 
                         <p>
                             Subtotal: ₱${money(itemSubtotal)}
@@ -658,7 +923,7 @@ function updateCart() {
                         <div class="quantity-controls">
                             <button onclick="changeQuantity(${index}, -1)">−</button>
 
-                            <strong>${item.quantity}</strong>
+                            <strong>${quantity}</strong>
 
                             <button onclick="changeQuantity(${index}, 1)">+</button>
                         </div>
@@ -675,14 +940,21 @@ function updateCart() {
         }).join("");
     }
 
-    cartCount.textContent = count;
-
     document.getElementById("cart-subtotal").textContent =
         money(subtotal);
 
+    const shippingElement = document.getElementById("shipping-fee");
+    const shippingFee = shippingElement
+        ? Number(shippingElement.textContent.replace(/[^0-9.]/g, "")) || 0
+        : 0;
+
     document.getElementById("cart-total").textContent =
-        money(subtotal);
+        money(subtotal + shippingFee);
 }
+
+// ==========================================
+// CHANGE PRODUCT QUANTITY
+// ==========================================
 
 function changeQuantity(index, amount) {
     if (!currentUser) {
@@ -702,7 +974,7 @@ function changeQuantity(index, amount) {
         ? Number(product.stock)
         : item.quantity;
 
-    const newQuantity = item.quantity + amount;
+    const newQuantity = Number(item.quantity) + amount;
 
     if (newQuantity <= 0) {
         removeFromCart(index);
@@ -710,7 +982,7 @@ function changeQuantity(index, amount) {
     }
 
     if (newQuantity > maximumStock) {
-        alert("Not enough stock available.");
+        showToast("Not enough stock available.", "warning");
         return;
     }
 
@@ -719,15 +991,28 @@ function changeQuantity(index, amount) {
     saveCart();
 }
 
+// ==========================================
+// REMOVE PRODUCT FROM CART
+// ==========================================
+
 function removeFromCart(index) {
     if (!currentUser) {
         openLoginModal();
         return;
     }
 
+    const removedItem = cart[index];
+
+    if (!removedItem) return;
+
     cart.splice(index, 1);
 
     saveCart();
+
+    showToast(
+        `${removedItem.name} was removed from your cart.`,
+        "info"
+    );
 }
 
 // ==========================================
@@ -836,7 +1121,6 @@ document.getElementById("login-form")
             loadOrders();
 
         } catch (error) {
-            // Show the error underneath the login button.
             showAccountMessage(
                 error.message || "Incorrect email or password. Please try again.",
                 "error"
@@ -1013,13 +1297,13 @@ document.getElementById("logout-button")
 
             showPage("account");
 
-            showAccountMessage(
+            showToast(
                 "You have logged out successfully.",
                 "success"
             );
 
         } catch (error) {
-            alert(error.message);
+            showToast(error.message, "error");
         }
     });
 
@@ -1087,6 +1371,11 @@ document.getElementById("checkout-button")
                 "Your order has been placed successfully!"
             );
 
+            showToast(
+                "Your order has been placed successfully!",
+                "success"
+            );
+
             await loadProducts();
             await loadOrders();
 
@@ -1094,6 +1383,7 @@ document.getElementById("checkout-button")
 
         } catch (error) {
             showCheckoutMessage(error.message);
+            showToast(error.message, "error");
         } finally {
             this.disabled = false;
         }
@@ -1204,7 +1494,7 @@ function displayOrders(orders) {
                 <p>Delivered! You can now review your purchase.</p>
 
                 <button class="secondary-button"
-                    onclick="alert('Product reviews will be enabled after the review backend is added.')">
+                    onclick="showToast('Product reviews will be enabled after the review backend is added.', 'info')">
                     Write a Review
                 </button>
             ` : ""}
@@ -1231,6 +1521,8 @@ document.querySelectorAll(".order-tab").forEach(button => {
 // ==========================================
 
 async function initializeShopEase() {
+    initializeToastStyles();
+
     updateAccountView();
     updateCart();
 
